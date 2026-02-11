@@ -457,14 +457,15 @@ with tab3:
         width="stretch",
     )
 
-    # CSV download for formal models
-    formal_export = df_risk[["distribution"] + formal_cols + ["fit_error"]].copy()
+    # CSV download — full p1–p99 percentile table
+    formal_csv = df_percentile_export.to_csv(index=False).encode("utf-8")
     st.download_button(
-        "Download formal risk models CSV",
-        data=formal_export.to_csv(index=False).encode("utf-8"),
-        file_name="formal_risk_models.csv",
+        "Download 1-99 percentile EV/EU CSV",
+        data=formal_csv,
+        file_name="formal_ev_eu_percentiles_p1_to_p99.csv",
         mime="text/csv",
         width="stretch",
+        key="formal_percentile_csv",
     )
 
     # Bar chart
