@@ -7,7 +7,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from distributions import fit_distribution
-from risk import (
+from risk_analysis import (
     analyze, analyze_all, RiskParams,
     compute_risk_neutral, compute_upside_skepticism,
     compute_downside_protection, compute_combined,

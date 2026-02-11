@@ -18,7 +18,7 @@ Key ideas:
 
 The fitting logic lives in
 `rp-distribution-fitting/distributions.py`, risk
-adjustments in `rp-distribution-fitting/risk.py`,
+adjustments in `rp-distribution-fitting/risk_analysis.py`,
 and the Streamlit UI in `rp-distribution-fitting/app.py`.
 
 ## How Fitting Connects to Risk Adjustments
@@ -44,7 +44,7 @@ The main risk adjustments are:
 - **Combined**: truncation plus loss‑averse utility.
 
 If you want to change how risk interacts with the fit, the entry points are
-`rp-distribution-fitting/risk.py` and the bounds
+`rp-distribution-fitting/risk_analysis.py` and the bounds
 or truncation parameters in `rp-distribution-fitting/app.py`.
 
 ## Formal Risk Aversion Models (Duffy 2023)
@@ -165,7 +165,7 @@ The formal models can also be used programmatically:
 
 ```python
 from distributions import fit_distribution
-from risk import compute_dmreu, compute_wlu, compute_ambiguity_aversion
+from risk_analysis import compute_dmreu, compute_wlu, compute_ambiguity_aversion
 
 fit = fit_distribution("normal", {0.10: -30, 0.50: 10, 0.90: 50})
 
@@ -182,7 +182,7 @@ aa_val = compute_ambiguity_aversion(fit, k=4.0)
 Or via the high-level `analyze()` function with `RiskParams`:
 
 ```python
-from risk import analyze, RiskParams
+from risk_analysis import analyze, RiskParams
 
 params = RiskParams(dmreu_p=0.05, wlu_c=0.10, ambiguity_k=4.0)
 result = analyze(fit, params)
@@ -208,7 +208,7 @@ Programmatic helpers:
 
 ```python
 from distributions import percentile_table, percentile_table_all
-from risk import ev_eu_percentile_table, ev_eu_percentile_table_all
+from risk_analysis import ev_eu_percentile_table, ev_eu_percentile_table_all
 
 # p1..p99 outcome values for one fit
 df_pct = percentile_table(fit)

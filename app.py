@@ -14,7 +14,7 @@ import streamlit as st
 
 from distributions import DISTRIBUTIONS, compare_fits, fit_all
 from examples import ALL_EXAMPLES
-from risk import (
+from risk_analysis import (
     RiskParams, analyze, analyze_all,
     compute_dmreu, compute_wlu, compute_ambiguity_aversion,
     ev_eu_percentile_table, ev_eu_percentile_table_all,
@@ -44,7 +44,7 @@ has_duplicate_percentiles = False
 duplicate_percentiles = []
 
 with st.sidebar:
-    fit_clicked = st.button("Fit distributions", type="primary", use_container_width=True)
+    fit_clicked = st.button("Fit distributions", type="primary", width="stretch")
 
     st.header("Input Data")
     st.caption("Does not automatically refresh — click **Fit distributions** to recalculate with changes")
@@ -90,7 +90,7 @@ with st.sidebar:
                 )
             pct_rows_input.append({"q": new_q, "v": new_v})
 
-        pct_submitted = st.form_submit_button("Update percentiles", use_container_width=True)
+        pct_submitted = st.form_submit_button("Update percentiles", width="stretch")
 
     # Add/remove buttons directly below the percentile list
     col_add, col_rm = st.columns(2)
@@ -302,7 +302,7 @@ with tab1:
         margin=dict(t=30),
         legend=dict(orientation="h", yanchor="bottom", y=1.02),
     )
-    st.plotly_chart(fig_pdf, use_container_width=True)
+    st.plotly_chart(fig_pdf, width="stretch")
 
     st.subheader("Fit Comparison")
     df_compare = compare_fits(fits)
@@ -315,7 +315,7 @@ with tab1:
             "skewness": "{:.3f}",
             "kurtosis": "{:.3f}",
         }).highlight_min(subset=["fit_error"], color="#d4edda"),
-        use_container_width=True,
+        width="stretch",
     )
 
 # ---- Tab 2: Risk Adjustments ----
@@ -367,7 +367,7 @@ with tab2:
             {col.replace("_", " ").title(): "{:.2f}" for col in ev_cols + ["fit_error"]},
             na_rep="—",
         ),
-        use_container_width=True,
+        width="stretch",
     )
 
     st.download_button(
@@ -375,7 +375,7 @@ with tab2:
         data=df_percentile_export.to_csv(index=False).encode("utf-8"),
         file_name="ev_eu_percentiles_p1_to_p99.csv",
         mime="text/csv",
-        use_container_width=True,
+        width="stretch",
     )
 
     # Bar chart
@@ -403,7 +403,7 @@ with tab2:
         margin=dict(t=30),
         legend=dict(orientation="h", yanchor="bottom", y=1.02),
     )
-    st.plotly_chart(fig_bar, use_container_width=True)
+    st.plotly_chart(fig_bar, width="stretch")
 
     # Explanation
     with st.expander("What do these risk adjustments mean?"):
@@ -454,7 +454,7 @@ with tab3:
             {col: "{:.2f}" for col in formal_display.columns if col not in ("Distribution", formal_labels.get("distribution", ""))},
             na_rep="—",
         ),
-        use_container_width=True,
+        width="stretch",
     )
 
     # CSV download for formal models
@@ -464,7 +464,7 @@ with tab3:
         data=formal_export.to_csv(index=False).encode("utf-8"),
         file_name="formal_risk_models.csv",
         mime="text/csv",
-        use_container_width=True,
+        width="stretch",
     )
 
     # Bar chart
@@ -486,7 +486,7 @@ with tab3:
         margin=dict(t=30),
         legend=dict(orientation="h", yanchor="bottom", y=1.02),
     )
-    st.plotly_chart(fig_formal, use_container_width=True)
+    st.plotly_chart(fig_formal, width="stretch")
 
     # Sensitivity analysis (for best-fit distribution)
     st.subheader("Sensitivity Analysis")
@@ -511,7 +511,7 @@ with tab3:
             height=300, margin=dict(t=40, b=30),
             showlegend=False,
         )
-        st.plotly_chart(fig_s1, use_container_width=True)
+        st.plotly_chart(fig_s1, width="stretch")
 
     with col_s2:
         wlu_c_range = np.linspace(0.0, 0.25, 30)
@@ -529,7 +529,7 @@ with tab3:
             height=300, margin=dict(t=40, b=30),
             showlegend=False,
         )
-        st.plotly_chart(fig_s2, use_container_width=True)
+        st.plotly_chart(fig_s2, width="stretch")
 
     with col_s3:
         amb_k_range = np.linspace(0.0, 8.0, 30)
@@ -547,7 +547,7 @@ with tab3:
             height=300, margin=dict(t=40, b=30),
             showlegend=False,
         )
-        st.plotly_chart(fig_s3, use_container_width=True)
+        st.plotly_chart(fig_s3, width="stretch")
 
     # Explanation
     with st.expander("What do these formal models mean?"):
@@ -657,7 +657,7 @@ with tab4:
                 xaxis_title="Value", yaxis_title="Cumulative Probability",
                 height=400, margin=dict(t=30),
             )
-            st.plotly_chart(fig_cdf, use_container_width=True)
+            st.plotly_chart(fig_cdf, width="stretch")
 
         with col_right:
             st.markdown("**Informal adjustments**")
@@ -738,6 +738,6 @@ with tab4:
                 "Error": fitted_val - target,
                 "Relative Error": f"{abs(fitted_val - target) / max(abs(target), 1e-6):.2%}",
             })
-        st.dataframe(pd.DataFrame(check_rows), use_container_width=True)
+        st.dataframe(pd.DataFrame(check_rows), width="stretch")
 
     explorer_fragment()
