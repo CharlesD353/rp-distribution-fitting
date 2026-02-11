@@ -162,29 +162,32 @@ with st.sidebar:
 
     dmreu_p = st.slider(
         "DMREU risk aversion (p)",
-        min_value=0.01, max_value=0.10, value=0.01, step=0.01, format="%.2f",
+        min_value=0.01, max_value=0.10, value=0.05, step=0.01, format="%.2f",
         help=(
             "Thought-experiment probability: what chance of saving 1000 lives "
             "makes you indifferent to saving 10 for certain? "
             "p=0.01 is risk-neutral, p=0.05 is moderate, p=0.10 is high risk aversion. "
+            "Presets from Duffy (2023) Table 12: 0.01–0.07. "
             "Internally converted to power exponent a = −2/log₁₀(p)."
         ),
     )
     wlu_c = st.slider(
         "WLU concavity (c)",
-        min_value=0.0, max_value=0.25, value=0.0, step=0.01, format="%.2f",
+        min_value=0.0, max_value=0.25, value=0.05, step=0.01, format="%.2f",
         help=(
             "Stakes-sensitive risk aversion: worse outcomes contribute more to the "
             "weighted expected value than their probability alone would suggest. "
-            "c=0 is risk-neutral, c=0.25 is high risk aversion."
+            "c=0 is risk-neutral, c=0.05 is low-moderate, c=0.25 is high risk aversion. "
+            "Presets from Duffy (2023) Tables 13–14: 0–0.20."
         ),
     )
     ambiguity_k = st.slider(
         "Ambiguity aversion (k)",
-        min_value=0.0, max_value=8.0, value=0.0, step=0.5, format="%.1f",
+        min_value=0.0, max_value=8.0, value=4.0, step=0.5, format="%.1f",
         help=(
             "Overweights worse-ranked expected utilities and underweights better ones. "
-            "k=0 is neutral, k=4 is mild (paper's f₂), k=8 is strong (paper's f₁)."
+            "k=0 is neutral, k=4 is mild (paper's 1.5x weight-to-worst), k=8 is strong. "
+            "Presets from Duffy (2023) Table 15: 0 and 4."
         ),
     )
 

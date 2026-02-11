@@ -40,10 +40,10 @@ class RiskParams:
     loss_aversion_lambda: float = 2.5
     reference_point: float = 0.0
     integration_bounds_q: tuple[float, float] = (0.0001, 0.9999)
-    # Formal model parameters (Duffy 2023)
-    dmreu_p: float = 0.01       # thought-experiment probability; 0.01 = risk-neutral
-    wlu_c: float = 0.0          # concavity; 0 = risk-neutral
-    ambiguity_k: float = 0.0    # cubic coefficient; 0 = ambiguity-neutral
+    # Formal model parameters (Duffy 2023) — defaults are moderate risk aversion
+    dmreu_p: float = 0.05       # thought-experiment probability; 0.01=neutral, 0.05=moderate
+    wlu_c: float = 0.05         # concavity; 0=neutral, 0.05=low-moderate
+    ambiguity_k: float = 4.0    # cubic coefficient; 0=neutral, 4=mild (1.5x weight-to-worst)
     n_samples: int = 10_000     # sample count for formal models
 
 
