@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import os
+import warnings
 from typing import NamedTuple
 
 import numpy as np
@@ -55,7 +56,6 @@ class LogStudentT:
     def mean(self):
         lb = float(self.ppf(0.001))
         ub = float(self.ppf(0.999))
-        import warnings
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             result, _ = integrate.quad(lambda x: x * self.pdf(x), lb, ub, limit=100)
@@ -65,7 +65,6 @@ class LogStudentT:
         mu = self.mean()
         lb = float(self.ppf(0.001))
         ub = float(self.ppf(0.999))
-        import warnings
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             var, _ = integrate.quad(lambda x: (x - mu) ** 2 * self.pdf(x), lb, ub, limit=100)
@@ -165,7 +164,10 @@ class FitResult:
         return self._dist.cdf(x)
 
     def ppf(self, q):
-        return float(self._dist.ppf(q))
+        result = self._dist.ppf(q)
+        if np.ndim(result) == 0:
+            return float(result)
+        return np.asarray(result, dtype=float)
 
     def mean(self):
         return float(self._dist.mean())
@@ -184,10 +186,7 @@ class FitResult:
 def _make_frozen(config: DistConfig, param_values: list[float]):
     """Create a frozen distribution from config and parameter values."""
     kwargs = dict(zip(config.param_names, param_values))
-    if config.is_custom:
-        return config.dist_class(**kwargs)
-    else:
-        return config.dist_class(**kwargs)
+    return config.dist_class(**kwargs)
 
 
 def _objective(params, config: DistConfig, percentiles: PercentileSpec) -> float:
@@ -198,15 +197,17 @@ def _objective(params, config: DistConfig, percentiles: PercentileSpec) -> float
         if k in kwargs and kwargs[k] <= 0:
             return 1e10
     try:
-        frozen = _make_frozen(config, list(params))
-        total = 0.0
-        for q, target in percentiles.items():
-            predicted = float(frozen.ppf(q))
-            if not np.isfinite(predicted):
-                return 1e10
-            denom = max(abs(target), 1e-6)
-            total += ((predicted - target) / denom) ** 2
-        return total
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+            frozen = _make_frozen(config, list(params))
+            total = 0.0
+            for q, target in percentiles.items():
+                predicted = float(frozen.ppf(q))
+                if not np.isfinite(predicted):
+                    return 1e10
+                denom = max(abs(target), 1e-6)
+                total += ((predicted - target) / denom) ** 2
+            return total
     except (ValueError, OverflowError, RuntimeWarning):
         return 1e10
 
@@ -425,3 +426,55 @@ def compare_fits(results: list[FitResult]) -> pd.DataFrame:
         })
 
     return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
+# Percentile table helpers
+# ---------------------------------------------------------------------------
+
+def _validate_percentile_points(percentile_points: list[int] | None = None) -> list[int]:
+    """Validate and normalize percentile points for export tables."""
+    points = list(range(1, 100)) if percentile_points is None else sorted(set(percentile_points))
+    if not points:
+        raise ValueError("At least one percentile point is required.")
+    invalid = [p for p in points if p < 1 or p > 99]
+    if invalid:
+        raise ValueError(
+            f"Percentiles must be integers in [1, 99], got invalid values: {invalid}"
+        )
+    return points
+
+
+def percentile_table(
+    fit: FitResult,
+    percentile_points: list[int] | None = None,
+) -> pd.DataFrame:
+    """Return percentile outcomes for one fitted distribution.
+
+    Default points are p1...p99.
+    """
+    points = _validate_percentile_points(percentile_points)
+    rows = []
+    for p in points:
+        q = p / 100.0
+        rows.append(
+            {
+                "distribution": fit.name,
+                "percentile": p,
+                "quantile": q,
+                "value": fit.ppf(q),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def percentile_table_all(
+    fits: list[FitResult],
+    percentile_points: list[int] | None = None,
+) -> pd.DataFrame:
+    """Return percentile outcomes for multiple fitted distributions."""
+    points = _validate_percentile_points(percentile_points)
+    frames = [percentile_table(fit, points) for fit in fits]
+    if not frames:
+        return pd.DataFrame(columns=["distribution", "percentile", "quantile", "value"])
+    return pd.concat(frames, ignore_index=True)

@@ -6,7 +6,15 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from distributions import fit_distribution, fit_all, compare_fits, DISTRIBUTIONS, FitResult
+from distributions import (
+    fit_distribution,
+    fit_all,
+    compare_fits,
+    DISTRIBUTIONS,
+    FitResult,
+    percentile_table,
+    percentile_table_all,
+)
 
 
 class TestFitDistribution:
@@ -101,3 +109,32 @@ class TestCompareFits:
         assert "fit_error" in df.columns
         assert "mean" in df.columns
         assert len(df) == len(results)
+
+
+class TestPercentileTables:
+
+    def test_percentile_table_defaults_to_1_to_99(self):
+        fit = fit_distribution("normal", {0.10: -10.0, 0.50: 5.0, 0.90: 20.0})
+        df = percentile_table(fit)
+        assert len(df) == 99
+        assert df["percentile"].min() == 1
+        assert df["percentile"].max() == 99
+        assert "value" in df.columns
+
+    def test_percentile_table_custom_points(self):
+        fit = fit_distribution("normal", {0.10: -10.0, 0.50: 5.0, 0.90: 20.0})
+        df = percentile_table(fit, [10, 50, 90])
+        assert list(df["percentile"]) == [10, 50, 90]
+        assert len(df) == 3
+
+    def test_percentile_table_rejects_invalid_points(self):
+        fit = fit_distribution("normal", {0.10: -10.0, 0.50: 5.0, 0.90: 20.0})
+        with pytest.raises(ValueError, match="\\[1, 99\\]"):
+            percentile_table(fit, [0, 50, 101])
+
+    def test_percentile_table_all_stacks_distributions(self):
+        pcts = {0.10: -10.0, 0.50: 5.0, 0.90: 20.0}
+        fits = fit_all(pcts, distributions=["normal", "students_t"])
+        df = percentile_table_all(fits)
+        assert len(df) == 99 * len(fits)
+        assert set(df["distribution"]) == {f.name for f in fits}
