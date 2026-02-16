@@ -374,9 +374,9 @@ with tab2:
     )
 
     st.download_button(
-        "Download 1-99 percentile EV/EU CSV",
-        data=df_percentile_export.to_csv(index=False).encode("utf-8"),
-        file_name="ev_eu_percentiles_p1_to_p99.csv",
+        "Download Full Risk Analysis CSV",
+        data=display_df.to_csv(index=False).encode("utf-8"),
+        file_name="risk_analysis.csv",
         mime="text/csv",
         width="stretch",
     )
@@ -460,12 +460,10 @@ with tab3:
         width="stretch",
     )
 
-    # CSV download — full p1–p99 percentile table
-    formal_csv = df_percentile_export.to_csv(index=False).encode("utf-8")
     st.download_button(
-        "Download 1-99 percentile EV/EU CSV",
-        data=formal_csv,
-        file_name="formal_ev_eu_percentiles_p1_to_p99.csv",
+        "Download Full Risk Analysis CSV",
+        data=display_df.to_csv(index=False).encode("utf-8"),
+        file_name="risk_analysis.csv",
         mime="text/csv",
         width="stretch",
         key="formal_percentile_csv",
