@@ -16,10 +16,17 @@ Key ideas:
 - Risk adjustments (upside skepticism, downside protection) let you model
   conservative or loss‑averse decision rules.
 
-The fitting logic lives in
-`rp-distribution-fitting/distributions.py`, risk
-adjustments in `rp-distribution-fitting/risk_analysis.py`,
-and the Streamlit UI in `rp-distribution-fitting/app.py`.
+The Streamlit app is organized into four tabs:
+1. **Fitted Distributions** — PDF overlay plot and fit comparison table.
+2. **Risk Adjustments** — informal risk-adjusted EVs (truncation, loss
+   aversion, combined) with a grouped bar chart and CSV export.
+3. **Formal Risk Models** — DMREU, WLU, and Ambiguity Aversion (Duffy 2023)
+   with sensitivity analysis charts.
+4. **Explorer** — interactive CDF viewer with live parameter sliders and a
+   per-percentile fit-check table.
+
+The fitting logic lives in `distributions.py`, risk adjustments in
+`risk_analysis.py`, and the Streamlit UI in `app.py`.
 
 ## How Fitting Connects to Risk Adjustments
 
@@ -44,8 +51,29 @@ The main risk adjustments are:
 - **Combined**: truncation plus loss‑averse utility.
 
 If you want to change how risk interacts with the fit, the entry points are
-`rp-distribution-fitting/risk_analysis.py` and the bounds
-or truncation parameters in `rp-distribution-fitting/app.py`.
+`risk_analysis.py` and the bounds or truncation parameters in `app.py`.
+
+## How Fitting Works
+
+Each distribution is fitted by minimising the **relative squared error**
+between the distribution's predicted percentile values (via its PPF / inverse
+CDF) and your target values:
+
+    error = Σ ((PPF(q) − target) / max(|target|, 1e-6))²
+
+The optimizer is `scipy.optimize.minimize`. For robustness the code tries
+multiple optimization methods (Nelder-Mead, Powell, L-BFGS-B) and several
+randomly perturbed starting points, then keeps the result with the lowest
+error. An initial guess is derived from the percentile data itself (e.g.
+using the interpolated median for `loc` and the value spread for `scale`).
+
+Distributions whose support is strictly positive (lognormal, log-Student's t)
+are automatically skipped when any percentile value is non-positive. The
+function `fit_all` fits every eligible distribution and returns results sorted
+by fit error, so the first element is the best fit.
+
+Fast mode (`RP_FAST=1` or `pytest --fast`) reduces the number of optimizer
+methods, iterations, and random restarts for quicker but less precise fits.
 
 ## Formal Risk Aversion Models (Duffy 2023)
 
@@ -87,7 +115,7 @@ for certain?" It is converted to the power exponent via `a = −2 / log₁₀(p)
 | 0.05 | ~1.54     | Moderate risk aversion |
 | 0.10 | 2.0       | High risk aversion     |
 
-**Slider range:** 0.01 to 0.10 (step 0.01), default 0.01 (risk-neutral).
+**Slider range:** 0.01 to 0.10 (step 0.01), default 0.05 (moderate risk aversion).
 
 ### WLU — Weighted Linear Utility
 
@@ -112,7 +140,7 @@ and `ŵᵢ = w(xᵢ) / mean(w)` are the normalised weights.
 | 0.05 | Low risk aversion      |
 | 0.25 | High risk aversion     |
 
-**Slider range:** 0.00 to 0.25 (step 0.01), default 0.00 (risk-neutral).
+**Slider range:** 0.00 to 0.25 (step 0.01), default 0.05 (low risk aversion).
 
 ### Ambiguity Aversion — Expected Difference Made
 
@@ -144,7 +172,7 @@ where outcomes are sorted worst-to-best and `i/(N−1)` is the rank fraction
 | 4   | [0.5, 1.5]  | Mild ambiguity aversion  |
 | 8   | [0, 2]      | Strong ambiguity aversion|
 
-**Slider range:** 0.0 to 8.0 (step 0.5), default 0.0 (ambiguity-neutral).
+**Slider range:** 0.0 to 8.0 (step 0.5), default 4.0 (mild ambiguity aversion).
 
 ### Using the formal models
 
@@ -157,8 +185,8 @@ In the Streamlit app, the formal model parameters appear in the sidebar under
    varies across the full range (computed for the best-fit distribution)
 4. Expandable explanations of each model
 
-Set all parameters to their defaults (p=0.01, c=0.0, k=0.0) to recover the
-risk-neutral expected value. Increasing any parameter makes the model more
+Set all parameters to their neutral values (p=0.01, c=0.0, k=0.0) to recover
+the risk-neutral expected value. Increasing any parameter makes the model more
 conservative (lower expected value for right-skewed distributions).
 
 The formal models can also be used programmatically:
@@ -190,21 +218,13 @@ result = analyze(fit, params)
 print(result.dmreu_ev, result.wlu_ev, result.ambiguity_aversion_ev)
 ```
 
-## Percentile CSV Export (p1 to p99)
+## CSV Export
 
-The app now supports downloading a CSV with 1st–99th percentile rows for every
-fitted distribution, including EV/EU fields.
+The **Risk Adjustments** and **Formal Risk Models** tabs each have a
+**Download Full Risk Analysis CSV** button that exports the summary table
+(one row per distribution) as `risk_analysis.csv`.
 
-- In the **Risk Adjustments** tab, click
-  **Download 1-99 percentile EV/EU CSV**.
-- The export includes one row per distribution × percentile (`p1` ... `p99`).
-- Key columns include:
-  - `ev_percentile_value` (raw fitted percentile outcome)
-  - `eu_percentile_value` (loss-averse utility transform at that percentile)
-  - summary EV/EU columns (e.g. `risk_neutral_ev`, `downside_protection_eu`,
-    `combined_eu`)
-
-Programmatic helpers:
+Percentile-level data (p1–p99) is available programmatically:
 
 ```python
 from distributions import percentile_table, percentile_table_all
@@ -216,7 +236,7 @@ df_pct = percentile_table(fit)
 # p1..p99 outcome values for all fits
 df_pct_all = percentile_table_all(fits)
 
-# p1..p99 EV/EU table for one fit
+# p1..p99 EV/EU table for one fit (includes risk summary columns)
 df_ev_eu = ev_eu_percentile_table(fit, params)
 
 # p1..p99 EV/EU table for all fits
