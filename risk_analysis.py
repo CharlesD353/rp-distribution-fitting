@@ -194,6 +194,25 @@ def _generate_samples(
     return fit.ppf(quantile_points)
 
 
+def _apply_probability_rounding(
+    samples: np.ndarray,
+    fit: FitResult,
+    epsilon: float,
+) -> np.ndarray:
+    """Zero out positive samples whose survival probability is below epsilon.
+
+    For each sample x > 0, if P(X >= x) < epsilon (i.e. achieving at least
+    that outcome is very unlikely), replace x with 0.
+    """
+    if epsilon <= 0:
+        return samples
+    rounded = samples.copy()
+    positive_mask = rounded > 0
+    survival = 1.0 - fit.cdf(rounded[positive_mask])
+    rounded[positive_mask] = np.where(survival < epsilon, 0.0, rounded[positive_mask])
+    return rounded
+
+
 # ---------------------------------------------------------------------------
 # Formal models (Duffy 2023)
 # ---------------------------------------------------------------------------
@@ -203,6 +222,8 @@ def compute_dmreu(
     p: float = 0.01,
     n_samples: int = 10_000,
     bounds_q: tuple[float, float] = (0.0001, 0.9999),
+    *,
+    samples: np.ndarray | None = None,
 ) -> float:
     """Difference-Making Risk-Weighted Expected Utility (Duffy 2023, p.35).
 
@@ -220,19 +241,17 @@ def compute_dmreu(
     p = 0.05 → a ≈ 1.54 (moderate risk aversion)
     p = 0.10 → a = 2.0 (high risk aversion)
     """
-    # Convert thought-experiment probability to power exponent
     if p <= 0 or p >= 1:
         raise ValueError(f"DMREU p must be in (0, 1), got {p}")
     a = -2.0 / math.log10(p)
 
-    samples = _generate_samples(fit, n_samples, bounds_q)
+    if samples is None:
+        samples = _generate_samples(fit, n_samples, bounds_q)
     d = np.sort(samples)  # worst to best
     N = len(d)
 
-    # P(i) = 1 - i/N for i = 0, ..., N; P(N) = 0
     P = 1.0 - np.arange(N + 1) / N
     m_P = np.power(P, a)
-    # Weight for outcome i: m(P(i)) - m(P(i+1))
     weights = m_P[:-1] - m_P[1:]
 
     return float(np.dot(d, weights))
@@ -243,6 +262,8 @@ def compute_wlu(
     c: float = 0.0,
     n_samples: int = 10_000,
     bounds_q: tuple[float, float] = (0.0001, 0.9999),
+    *,
+    samples: np.ndarray | None = None,
 ) -> float:
     """Weighted Linear Utility (Duffy 2023, pp.39-42).
 
@@ -259,7 +280,8 @@ def compute_wlu(
     c = 0.05: low risk aversion
     c = 0.25: high risk aversion
     """
-    samples = _generate_samples(fit, n_samples, bounds_q)
+    if samples is None:
+        samples = _generate_samples(fit, n_samples, bounds_q)
 
     if c <= 0:
         return float(np.mean(samples))
@@ -286,6 +308,8 @@ def compute_ambiguity_aversion(
     k: float = 0.0,
     n_samples: int = 10_000,
     bounds_q: tuple[float, float] = (0.0001, 0.9999),
+    *,
+    samples: np.ndarray | None = None,
 ) -> float:
     """Expected Difference Made with Ambiguity Aversion (Duffy 2023, pp.42-45).
 
@@ -304,7 +328,8 @@ def compute_ambiguity_aversion(
     first-order outcomes), capturing the directional intent without requiring
     a set of competing models.
     """
-    samples = _generate_samples(fit, n_samples, bounds_q)
+    if samples is None:
+        samples = _generate_samples(fit, n_samples, bounds_q)
 
     if k == 0.0:
         return float(np.mean(samples))
@@ -323,6 +348,85 @@ def compute_ambiguity_aversion(
     weights = weights * (N / w_sum)
 
     return float(np.mean(weights * d))
+
+
+# ---------------------------------------------------------------------------
+# Flexible formal model runs
+# ---------------------------------------------------------------------------
+
+FORMAL_MODEL_TYPES = {
+    "dmreu": {"param_name": "p", "compute": compute_dmreu, "param_key": "p"},
+    "wlu": {"param_name": "c", "compute": compute_wlu, "param_key": "c"},
+    "ambiguity": {"param_name": "k", "compute": compute_ambiguity_aversion, "param_key": "k"},
+}
+
+
+@dataclass
+class FormalModelRun:
+    """A single formal risk model evaluation with a specific parameter value.
+
+    When *epsilon* > 0, probability rounding is applied before the model:
+    positive samples whose survival probability P(X >= x) < epsilon are
+    zeroed out.
+    """
+    model: str    # "dmreu", "wlu", or "ambiguity"
+    param: float
+    epsilon: float = 0.0
+    label: str = ""
+
+    def __post_init__(self):
+        if self.model not in FORMAL_MODEL_TYPES:
+            raise ValueError(
+                f"Unknown model {self.model!r}. "
+                f"Choose from: {list(FORMAL_MODEL_TYPES)}"
+            )
+        if not self.label:
+            info = FORMAL_MODEL_TYPES[self.model]
+            parts = f"{info['param_name']}={self.param}"
+            if self.epsilon > 0:
+                parts += f", e={self.epsilon}"
+            self.label = f"{self.model.upper()} ({parts})"
+
+
+def compute_formal_run(
+    fit: FitResult,
+    run: FormalModelRun,
+    n_samples: int = 10_000,
+    bounds_q: tuple[float, float] = (0.0001, 0.9999),
+) -> float:
+    """Compute a single formal model run for one fitted distribution.
+
+    If run.epsilon > 0, generates samples, applies probability rounding,
+    then passes the modified samples to the model function.
+    """
+    info = FORMAL_MODEL_TYPES[run.model]
+    if run.epsilon > 0:
+        samples = _generate_samples(fit, n_samples, bounds_q)
+        samples = _apply_probability_rounding(samples, fit, run.epsilon)
+        return info["compute"](fit, **{info["param_key"]: run.param}, samples=samples)
+    return info["compute"](fit, **{info["param_key"]: run.param}, n_samples=n_samples, bounds_q=bounds_q)
+
+
+def compute_formal_runs_all(
+    fits: list[FitResult],
+    runs: list[FormalModelRun],
+    n_samples: int = 10_000,
+    bounds_q: tuple[float, float] = (0.0001, 0.9999),
+) -> pd.DataFrame:
+    """Compute flexible formal model runs for all fitted distributions.
+
+    Returns a DataFrame with columns: distribution, one column per run label,
+    risk_neutral_ev, fit_error.
+    """
+    rows = []
+    for fit in fits:
+        row: dict[str, object] = {"distribution": fit.name}
+        row["risk_neutral_ev"] = float(compute_risk_neutral(fit, bounds_q))
+        for run in runs:
+            row[run.label] = float(compute_formal_run(fit, run, n_samples, bounds_q))
+        row["fit_error"] = float(fit.error)
+        rows.append(row)
+    return pd.DataFrame(rows)
 
 
 # ---------------------------------------------------------------------------
@@ -379,7 +483,7 @@ def analyze_all(
     for fit in fits:
         result = analyze(fit, params)
         row = result.to_dict()
-        row["fit_error"] = fit.error
+        row["fit_error"] = float(fit.error)
         rows.append(row)
     return pd.DataFrame(rows)
 

@@ -172,24 +172,57 @@ where outcomes are sorted worst-to-best and `i/(N−1)` is the rank fraction
 | 4   | [0.5, 1.5]  | Mild ambiguity aversion  |
 | 8   | [0, 2]      | Strong ambiguity aversion|
 
-**Slider range:** 0.0 to 8.0 (step 0.5), default 4.0 (mild ambiguity aversion).
+**Parameter range:** 0.0 to 8.0, default 4.0 (mild ambiguity aversion).
 
-### Using the formal models
+### Configurable formal model runs
 
-In the Streamlit app, the formal model parameters appear in the sidebar under
-**Formal Risk Models (Duffy 2023)**. The **Formal Risk Models** tab shows:
+Instead of a fixed set of three formal models, the app lets you configure any
+number of **formal model runs** — each specifying a model type and a parameter
+value. This makes it easy to, for example, compare WLU at c=0.01, 0.05, and
+0.10 side-by-side (the "WLU sweep" preset does exactly this).
 
-1. A summary table comparing risk-neutral EV with all three model outputs
-2. A grouped bar chart for visual comparison across distributions
-3. Sensitivity analysis charts showing how each model responds as its parameter
-   varies across the full range (computed for the best-fit distribution)
-4. Expandable explanations of each model
+**In the Streamlit app** each tab contains its own configuration controls:
 
-Set all parameters to their neutral values (p=0.01, c=0.0, k=0.0) to recover
-the risk-neutral expected value. Increasing any parameter makes the model more
-conservative (lower expected value for right-skewed distributions).
+- The **Risk Adjustments** tab has a collapsible *Parameters* section for
+  truncation percentile, loss aversion multiplier, reference point, and
+  median-reference toggle.
+- The **Formal Risk Models** tab has a collapsible *Configure model runs*
+  section with a **Preset** selector (e.g. "WLU sweep", "One of each", or
+  "Custom") and a dynamic list of model runs — each with a model-type
+  dropdown, a parameter input, and an optional **ε (epsilon)** for probability
+  rounding. You can add or remove runs freely.
 
-The formal models can also be used programmatically:
+The configured formal runs also appear in:
+
+1. **Risk Adjustments** tab — formal run columns are appended to the informal
+   adjustments table.
+2. **Explorer** tab — metric cards showing each run's value for the selected
+   distribution.
+
+### Probability rounding (ε)
+
+Each formal model run can optionally apply **probability rounding** before the
+model computation. When ε > 0, any positive outcome x whose survival
+probability P(X ≥ x) < ε is set to zero. This captures the idea that
+very unlikely positive outcomes should not influence the expected value —
+a form of upside skepticism that layers on top of any formal risk model.
+
+**Example:** With ε = 0.05 applied to a lognormal distribution, the top ~5%
+of positive outcomes (those with less than 5% chance of being achieved) are
+replaced with 0 before computing WLU/DMREU/etc.
+
+| ε    | Effect                                   |
+|------|------------------------------------------|
+| 0.00 | No rounding (default)                    |
+| 0.01 | Zero out outcomes with < 1% survival     |
+| 0.05 | Zero out outcomes with < 5% survival     |
+| 0.10 | Zero out outcomes with < 10% survival    |
+
+Negative outcomes are never affected by probability rounding.
+
+### Programmatic use
+
+Individual model functions remain available:
 
 ```python
 from distributions import fit_distribution
@@ -197,17 +230,31 @@ from risk_analysis import compute_dmreu, compute_wlu, compute_ambiguity_aversion
 
 fit = fit_distribution("normal", {0.10: -30, 0.50: 10, 0.90: 50})
 
-# DMREU with moderate risk aversion
 dmreu_val = compute_dmreu(fit, p=0.05)
-
-# WLU with low concavity
 wlu_val = compute_wlu(fit, c=0.05)
-
-# Ambiguity aversion, mild
 aa_val = compute_ambiguity_aversion(fit, k=4.0)
 ```
 
-Or via the high-level `analyze()` function with `RiskParams`:
+For flexible multi-run evaluation, use `FormalModelRun` and
+`compute_formal_runs_all`:
+
+```python
+from risk_analysis import FormalModelRun, compute_formal_runs_all
+
+runs = [
+    FormalModelRun(model="wlu", param=0.01),
+    FormalModelRun(model="wlu", param=0.05),
+    FormalModelRun(model="wlu", param=0.10),
+    # With probability rounding: zero out positive outcomes with < 5% survival
+    FormalModelRun(model="wlu", param=0.05, epsilon=0.05),
+]
+df = compute_formal_runs_all(fits, runs)
+# Columns: distribution, risk_neutral_ev, WLU (c=0.01), WLU (c=0.05),
+#           WLU (c=0.1), WLU (c=0.05, e=0.05), fit_error
+```
+
+Or via the high-level `analyze()` function with `RiskParams` (for informal
+adjustments and the default formal model set):
 
 ```python
 from risk_analysis import analyze, RiskParams
@@ -220,9 +267,10 @@ print(result.dmreu_ev, result.wlu_ev, result.ambiguity_aversion_ev)
 
 ## CSV Export
 
-The **Risk Adjustments** and **Formal Risk Models** tabs each have a
-**Download Full Risk Analysis CSV** button that exports the summary table
-(one row per distribution) as `risk_analysis.csv`.
+The **Risk Adjustments** tab has a **Download Full Risk Analysis CSV** button
+that exports informal adjustments and all configured formal model runs in one
+table. The **Formal Risk Models** tab has a separate **Download Formal Risk
+Models CSV** button that exports just the formal model columns.
 
 Percentile-level data (p1–p99) is available programmatically:
 

@@ -13,6 +13,8 @@ from risk_analysis import (
     compute_downside_protection, compute_combined,
     compute_dmreu, compute_wlu, compute_ambiguity_aversion,
     ev_eu_percentile_table, ev_eu_percentile_table_all,
+    FormalModelRun, compute_formal_run, compute_formal_runs_all,
+    _apply_probability_rounding, _generate_samples,
 )
 
 
@@ -242,3 +244,169 @@ class TestEvEuPercentileTables:
         df = ev_eu_percentile_table_all(fits)
         assert len(df) == 99 * len(fits)
         assert set(df["distribution"]) == {f.name for f in fits}
+
+
+# ---------------------------------------------------------------------------
+# Flexible formal model runs
+# ---------------------------------------------------------------------------
+
+
+class TestFormalModelRun:
+
+    def test_auto_label_wlu(self):
+        run = FormalModelRun(model="wlu", param=0.05)
+        assert run.label == "WLU (c=0.05)"
+
+    def test_auto_label_dmreu(self):
+        run = FormalModelRun(model="dmreu", param=0.03)
+        assert run.label == "DMREU (p=0.03)"
+
+    def test_auto_label_ambiguity(self):
+        run = FormalModelRun(model="ambiguity", param=4.0)
+        assert run.label == "AMBIGUITY (k=4.0)"
+
+    def test_custom_label(self):
+        run = FormalModelRun(model="wlu", param=0.10, label="My WLU")
+        assert run.label == "My WLU"
+
+    def test_unknown_model_raises(self):
+        with pytest.raises(ValueError, match="Unknown model"):
+            FormalModelRun(model="nonexistent", param=1.0)
+
+
+class TestComputeFormalRun:
+
+    @pytest.fixture
+    def normal_fit(self):
+        return fit_distribution("normal", {0.10: -30.0, 0.50: 10.0, 0.90: 50.0})
+
+    def test_wlu_run_matches_direct_call(self, normal_fit):
+        run = FormalModelRun(model="wlu", param=0.05)
+        via_run = compute_formal_run(normal_fit, run)
+        direct = compute_wlu(normal_fit, c=0.05)
+        assert abs(via_run - direct) < 1e-10
+
+    def test_dmreu_run_matches_direct_call(self, normal_fit):
+        run = FormalModelRun(model="dmreu", param=0.05)
+        via_run = compute_formal_run(normal_fit, run)
+        direct = compute_dmreu(normal_fit, p=0.05)
+        assert abs(via_run - direct) < 1e-10
+
+    def test_ambiguity_run_matches_direct_call(self, normal_fit):
+        run = FormalModelRun(model="ambiguity", param=4.0)
+        via_run = compute_formal_run(normal_fit, run)
+        direct = compute_ambiguity_aversion(normal_fit, k=4.0)
+        assert abs(via_run - direct) < 1e-10
+
+
+class TestComputeFormalRunsAll:
+
+    def test_returns_correct_columns(self):
+        from distributions import fit_all
+        pcts = {0.10: -10.0, 0.50: 5.0, 0.90: 20.0}
+        fits = fit_all(pcts, distributions=["normal", "students_t"])
+        runs = [
+            FormalModelRun(model="wlu", param=0.01),
+            FormalModelRun(model="wlu", param=0.05),
+            FormalModelRun(model="wlu", param=0.10),
+        ]
+        df = compute_formal_runs_all(fits, runs)
+        assert "distribution" in df.columns
+        assert "risk_neutral_ev" in df.columns
+        assert "fit_error" in df.columns
+        for run in runs:
+            assert run.label in df.columns
+        assert len(df) == len(fits)
+
+    def test_higher_wlu_c_more_conservative(self):
+        from distributions import fit_all
+        pcts = {0.10: 5.0, 0.50: 20.0, 0.90: 100.0}
+        fits = fit_all(pcts, distributions=["lognormal"])
+        runs = [
+            FormalModelRun(model="wlu", param=0.01),
+            FormalModelRun(model="wlu", param=0.10),
+        ]
+        df = compute_formal_runs_all(fits, runs)
+        assert df[runs[1].label].iloc[0] < df[runs[0].label].iloc[0]
+
+    def test_mixed_model_types(self):
+        from distributions import fit_all
+        pcts = {0.10: -10.0, 0.50: 5.0, 0.90: 20.0}
+        fits = fit_all(pcts, distributions=["normal"])
+        runs = [
+            FormalModelRun(model="dmreu", param=0.05),
+            FormalModelRun(model="wlu", param=0.05),
+            FormalModelRun(model="ambiguity", param=4.0),
+        ]
+        df = compute_formal_runs_all(fits, runs)
+        for run in runs:
+            assert run.label in df.columns
+            assert np.isfinite(df[run.label].iloc[0])
+
+
+# ---------------------------------------------------------------------------
+# Probability rounding
+# ---------------------------------------------------------------------------
+
+
+class TestProbabilityRounding:
+
+    @pytest.fixture
+    def lognormal_fit(self):
+        return fit_distribution("lognormal", {0.10: 5.0, 0.50: 20.0, 0.90: 100.0})
+
+    @pytest.fixture
+    def normal_fit(self):
+        return fit_distribution("normal", {0.10: -30.0, 0.50: 10.0, 0.90: 50.0})
+
+    def test_epsilon_zero_is_noop(self, lognormal_fit):
+        samples = _generate_samples(lognormal_fit)
+        rounded = _apply_probability_rounding(samples, lognormal_fit, 0.0)
+        np.testing.assert_array_equal(samples, rounded)
+
+    def test_high_positive_values_zeroed(self, lognormal_fit):
+        """With epsilon=0.05, the top ~5% of positive outcomes should be zeroed."""
+        samples = _generate_samples(lognormal_fit)
+        rounded = _apply_probability_rounding(samples, lognormal_fit, 0.05)
+        threshold = lognormal_fit.ppf(0.95)
+        assert np.all(rounded[samples > threshold] == 0.0)
+        assert np.all(rounded[samples <= threshold] == samples[samples <= threshold])
+
+    def test_negative_values_untouched(self, normal_fit):
+        """Rounding only affects positive values; negatives remain unchanged."""
+        samples = _generate_samples(normal_fit)
+        rounded = _apply_probability_rounding(samples, normal_fit, 0.05)
+        neg_mask = samples < 0
+        np.testing.assert_array_equal(samples[neg_mask], rounded[neg_mask])
+
+    def test_rounding_reduces_wlu_value(self, lognormal_fit):
+        """WLU with rounding should give a lower value than without."""
+        run_no_round = FormalModelRun(model="wlu", param=0.05, epsilon=0.0)
+        run_round = FormalModelRun(model="wlu", param=0.05, epsilon=0.05)
+        val_no = compute_formal_run(lognormal_fit, run_no_round)
+        val_yes = compute_formal_run(lognormal_fit, run_round)
+        assert val_yes < val_no
+
+    def test_rounding_reduces_dmreu_value(self, lognormal_fit):
+        """DMREU with rounding should give a lower value than without."""
+        run_no_round = FormalModelRun(model="dmreu", param=0.05, epsilon=0.0)
+        run_round = FormalModelRun(model="dmreu", param=0.05, epsilon=0.05)
+        val_no = compute_formal_run(lognormal_fit, run_no_round)
+        val_yes = compute_formal_run(lognormal_fit, run_round)
+        assert val_yes < val_no
+
+    def test_larger_epsilon_more_conservative(self, lognormal_fit):
+        """A larger epsilon should zero out more samples and give a lower value."""
+        run_small = FormalModelRun(model="wlu", param=0.05, epsilon=0.01)
+        run_large = FormalModelRun(model="wlu", param=0.05, epsilon=0.10)
+        val_small = compute_formal_run(lognormal_fit, run_small)
+        val_large = compute_formal_run(lognormal_fit, run_large)
+        assert val_large < val_small
+
+    def test_label_includes_epsilon(self):
+        run = FormalModelRun(model="wlu", param=0.05, epsilon=0.01)
+        assert "e=0.01" in run.label
+
+    def test_label_omits_epsilon_when_zero(self):
+        run = FormalModelRun(model="wlu", param=0.05, epsilon=0.0)
+        assert "e=" not in run.label
