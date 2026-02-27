@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rp-distribution-fitting"
+version = "0.1.0"
+description = "Fit parametric distributions to percentile constraints with risk-adjusted expected values"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "pandas>=1.5",
+]
+
+[tool.setuptools]
+py-modules = ["distributions", "risk_analysis"]
